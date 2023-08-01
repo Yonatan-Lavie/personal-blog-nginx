@@ -1,0 +1,50 @@
+name: Nginx Configuration Deployment
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Configure SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan ${{ secrets.EC2_INSTANCE_IP }} >> ~/.ssh/known_hosts
+    
+    - name: Replace server_name
+      run: |
+        # Extract the domain_name from nginx.conf and store it in a variable
+        OLD_DOMAIN_NAME=$(grep -oP 'domain_name \K\S+' /etc/nginx/nginx.conf)
+
+        # Replace server_name in nginx.conf with your desired server name
+        sed -i 's/server_name $OLD_DOMAIN_NAME/server_name ${{ secrets.PUBLIC_DOMAIN_NAME}}/' /etc/nginx/nginx.conf
+      env:
+        USER_NAME: ${{ secrets.USER_NAME}}
+        PUBLIC_DOMAIN_NAME: ${{ secrets.PUBLIC_DOMAIN_NAME}}
+    
+
+    - name: Copy Nginx Configuration
+      run: scp -r nginx.conf ${{ secrets.USER_NAME}}@${{ secrets.PUBLIC_DOMAIN_NAME}}:/etc/nginx/nginx.conf
+
+    - name: Test Nginx Configuration Syntax
+      run: |
+        # Test Nginx Configuration Syntax
+        ssh ${{ secrets.USER_NAME}}@${{ secrets.PUBLIC_DOMAIN_NAME}} sudo nginx -t -c /etc/nginx/nginx.conf
+
+    - name: Reload Nginx
+      run: ssh ${{ secrets.USER_NAME}}@${{ secrets.PUBLIC_DOMAIN_NAME}} sudo systemctl reload nginx
+      env:
+        USER_NAME: ${{ secrets.USER_NAME}}
+        PUBLIC_DOMAIN_NAME: ${{ secrets.PUBLIC_DOMAIN_NAME}}
+        SERVER_PORT: ${{ secrets.SERVER_PORT }}
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}   
